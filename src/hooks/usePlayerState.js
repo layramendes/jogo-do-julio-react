@@ -12,9 +12,16 @@ export const usePlayerStateWithPoop = (userId) => {
             if (!doc.exists()) {
                 const initialState = {
                     stats: { health: 100, hunger: 80, hygiene: 70, fun: 90, energy: 60 },
-                    coins: 100,
+                    coins: 250,
+                    level: 1,
+                    xp: 0,
                     isSleeping: false,
-                    customization: { background: 'bg-green-200' },
+                    isLightOn: true,
+                    customization: { 
+                        background: 'bg-green-200',
+                        hat: null,
+                        glasses: null 
+                    },
                     inventory: { 'maca': 2, 'sabonete': 1, 'bola': 1 },
                     backgroundsOwned: ['bg-green-200'],
                     poops: []

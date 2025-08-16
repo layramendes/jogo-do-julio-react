@@ -35,6 +35,8 @@ export const gameItems = {
   'remedio': { name: 'Remédio', price: 50, icon: '💊', type: 'health', effect: { stat: 'health', value: 40 }, feedback: 'Melhor agora!' },
   'fundo_praia': { name: 'Fundo Praia', price: 150, icon: '🏖️', type: 'background', value: 'bg-blue-200' },
   'fundo_espaco': { name: 'Fundo Espaço', price: 200, icon: '🚀', type: 'background', value: 'bg-gray-800' },
+  'chapeu_bob': { name: 'Chapéu Bob', price: 100, icon: '🎩', type: 'accessory', category: 'hat' },
+  'oculos_descolado': { name: 'Óculos Descolado', price: 120, icon: '😎', type: 'accessory', category: 'glasses' },
 };
 
 // =================================================================================

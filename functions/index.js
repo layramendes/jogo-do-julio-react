@@ -1,48 +1,46 @@
 // functions/index.js
-
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
-
-// A linha problemática que estava aqui foi removida.
+const stripe = require("stripe")(functions.config().stripe.secret);
 
 admin.initializeApp();
 
-exports.createStripeCheckout = functions.https.onCall(async (data, context) => {
-  // A inicialização do Stripe foi MOVIDA para AQUI DENTRO.
-  const stripe = require("stripe")(functions.config().stripe.secret);
-
-  // Garante que o utilizador está autenticado
-  if (!context.auth) {
-    throw new functions.https.HttpsError(
-      "unauthenticated",
-      "You must be logged in to make a purchase."
-    );
-  }
-
-  const { priceId, success_url, cancel_url } = data;
+exports.stripeWebhook = functions.https.onRequest(async (req, res) => {
+  const sig = req.headers["stripe-signature"];
+  const webhookSecret = functions.config().stripe.webhook_secret;
+  let event;
 
   try {
-    const session = await stripe.checkout.sessions.create({
-      payment_method_types: ["card"],
-      mode: "payment",
-      success_url: success_url,
-      cancel_url: cancel_url,
-      line_items: [
-        {
-          price: priceId,
-          quantity: 1,
-        },
-      ],
-      client_reference_id: context.auth.uid,
-    });
+    event = stripe.webhooks.constructEvent(req.rawBody, sig, webhookSecret);
+  } catch (err) {
+    console.error("Webhook signature verification failed.", err.message);
+    return res.status(400).send(`Webhook Error: ${err.message}`);
+  }
 
-    return { id: session.id };
+  // Handle the checkout.session.completed event
+  if (event.type === "checkout.session.completed") {
+    const session = event.data.object;
+    const {userId, coinAmount} = session.metadata;
 
-  } catch (error) {
-    console.error("Stripe session creation failed:", error);
-    throw new functions.https.HttpsError(
-      "internal",
-      "Could not create Stripe checkout session."
-    );
+    if (!userId || !coinAmount) {
+      console.error("Missing metadata: userId or coinAmount");
+      return res.status(400).send("Error: Missing metadata.");
+    }
+
+    const playerDocRef = admin.firestore().collection("players").doc(userId);
+
+    try {
+      // Use FieldValue.increment to safely add coins
+      await playerDocRef.update({
+        coins: admin.firestore.FieldValue.increment(parseInt(coinAmount, 10)),
+      });
+      console.log(`Successfully credited ${coinAmount} coins to user ${userId}`);
+      res.status(200).json({received: true});
+    } catch (error) {
+      console.error("Failed to update player coins:", error);
+      res.status(500).send("Error updating player data.");
+    }
+  } else {
+    res.status(200).send(`Unhandled event type: ${event.type}`);
   }
 });

@@ -1,4 +1,3 @@
-// src/App.jsx
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { initializeApp, getApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
@@ -24,6 +23,7 @@ import DraggableItem from './components/game/DraggableItem';
 import InteractionFeedback from './components/game/InteractionFeedback';
 import CleaningMinigame from './components/game/CleaningMinigame';
 import CatchTheBallGame from './components/game/CatchTheBallGame';
+import MemoryGame from './components/game/MemoryGame';
 
 // Importações de "Telas" (Ecrãs)
 import Shop from './components/screens/Shop';
@@ -38,7 +38,8 @@ export default function App() {
     const [draggableItem, setDraggableItem] = useState(null);
     const [feedback, setFeedback] = useState(null);
     const [isCleaning, setIsCleaning] = useState(false);
-    const [isGameActive, setIsGameActive] = useState(false);
+    const [isCatchBallActive, setIsCatchBallActive] = useState(false);
+    const [isMemoryGameActive, setIsMemoryGameActive] = useState(false);
     const [isPetting, setIsPetting] = useState(false);
     const [particles, setParticles] = useState([]);
     const [julioRect, setJulioRect] = useState(null);
@@ -70,7 +71,8 @@ export default function App() {
     }, [playerState, updatePlayerState]);
 
     const gameLoop = useCallback(() => {
-        if (!playerState || isCleaning || isGameActive || isPetting) return;
+        const isAnyGameActive = isCatchBallActive || isMemoryGameActive;
+        if (!playerState || isCleaning || isAnyGameActive || isPetting) return;
         let newStats = { ...playerState.stats };
         if (playerState.isSleeping && !playerState.isLightOn) {
             newStats.energy = Math.min(100, newStats.energy + 1.0);
@@ -86,10 +88,10 @@ export default function App() {
             }
         }
         updatePlayerState({ stats: newStats });
-    }, [playerState, updatePlayerState, isCleaning, isGameActive, isPetting]);
+    }, [playerState, updatePlayerState, isCleaning, isCatchBallActive, isMemoryGameActive, isPetting]);
 
     useEffect(() => { const interval = setInterval(gameLoop, 5000); return () => clearInterval(interval); }, [gameLoop]);
-    useEffect(() => { if (!playerState || isCleaning || isGameActive || isPetting || playerState.isSleeping) return; const poopInterval = setInterval(() => { const poops = playerState.poops || []; if (poops.length >= 3) return; if (Math.random() < 0.2) { soundManager.playSound('poop'); const newPoop = { id: Date.now(), style: { top: `${Math.random() * 20 + 75}%`, left: `${Math.random() * 80 + 10}%`, } }; updatePlayerState({ poops: arrayUnion(newPoop) }); } }, 30000); return () => clearInterval(poopInterval); }, [playerState, isCleaning, isGameActive, isPetting, updatePlayerState]);
+    useEffect(() => { const isAnyGameActive = isCatchBallActive || isMemoryGameActive; if (!playerState || isCleaning || isAnyGameActive || isPetting || playerState.isSleeping) return; const poopInterval = setInterval(() => { const poops = playerState.poops || []; if (poops.length >= 3) return; if (Math.random() < 0.2) { soundManager.playSound('poop'); const newPoop = { id: Date.now(), style: { top: `${Math.random() * 20 + 75}%`, left: `${Math.random() * 80 + 10}%`, } }; updatePlayerState({ poops: arrayUnion(newPoop) }); } }, 30000); return () => clearInterval(poopInterval); }, [playerState, isCleaning, isCatchBallActive, isMemoryGameActive, isPetting, updatePlayerState]);
 
     const handleAction = useCallback((stat, value) => { if (!playerState || playerState.isSleeping) return; const newStats = { ...playerState.stats }; newStats[stat] = Math.min(100, (newStats[stat] || 0) + value); if (stat !== 'energy') newStats.energy = Math.max(0, newStats.energy - 2); updatePlayerState({ stats: newStats }); gainXp(5); }, [playerState, updatePlayerState, gainXp]);
     const handleSleep = useCallback(() => { if (!playerState) return; updatePlayerState({ isSleeping: !playerState.isSleeping }); }, [playerState, updatePlayerState]);
@@ -113,7 +115,6 @@ export default function App() {
                 mode: 'payment',
                 successUrl: `${window.location.origin}?purchase=success`,
                 cancelUrl: `${window.location.origin}?purchase=canceled`,
-                // INFORMAÇÃO CRÍTICA PARA O WEBHOOK
                 clientReferenceId: userId,
                 metadata: {
                     userId: userId,
@@ -163,7 +164,17 @@ export default function App() {
         }
         setDraggableItem(null);
     };
-    const handleGameFinish = (score) => { const coinsEarned = score * 2; if (coinsEarned > 0) { showFeedback(`+${coinsEarned} moedas!`); gainXp(score * 2); } updatePlayerState({ coins: playerState.coins + coinsEarned, }); setIsGameActive(false); };
+    const handleGameFinish = (score, gameType) => {
+        const coinsEarned = score * 2;
+        if (coinsEarned > 0) {
+            showFeedback(`+${coinsEarned} moedas!`);
+            gainXp(score);
+            updatePlayerState({ coins: playerState.coins + coinsEarned });
+        }
+
+        if (gameType === 'catch') setIsCatchBallActive(false);
+        if (gameType === 'memory') setIsMemoryGameActive(false);
+    };
     const handlePettingEnd = useCallback(() => { setIsPetting(false); clearInterval(pettingIntervalRef.current); window.removeEventListener('mouseup', handlePettingEnd); }, []);
     const handlePettingStart = (event) => { /* ...código idêntico... */ };
     const handlePettingMove = (event) => { /* ...código idêntico... */ };
@@ -191,7 +202,12 @@ export default function App() {
             case 'Loja': return <Shop playerState={playerState} updatePlayerState={updatePlayerState} onBuyCoins={handleBuyCoins} onShowFeedback={showFeedback} />;
             case 'Cozinha': return <RoomComponent playerState={playerState} onUseItem={handleUseItem} itemType="food" emptyMessage="Não tem comida. Visite a loja! 🛒" />;
             case 'Casa de Banho': return <RoomComponent playerState={playerState} onUseItem={handleUseItem} itemType="hygiene" emptyMessage="Não tem itens de higiene. 🛒" />;
-            case 'Sala de Jogos': return <Playroom onStartGame={() => { soundManager.playSound('click'); setIsGameActive(true); setActiveOverlay(null); }} />;
+            case 'Sala de Jogos': return <Playroom onStartGame={(game) => {
+                soundManager.playSound('click');
+                if (game === 'catch') setIsCatchBallActive(true);
+                if (game === 'memory') setIsMemoryGameActive(true);
+                setActiveOverlay(null);
+            }} />;
             case 'Quarto': return <Bedroom playerState={playerState} updatePlayerState={updatePlayerState} onSleep={handleSleep} onToggleLight={handleToggleLight} />;
             case 'Guarda-Roupa': return <Wardrobe playerState={playerState} onEquipItem={handleEquipItem} />;
             default: return null;
@@ -202,6 +218,7 @@ export default function App() {
 
     const backgroundClass = playerState?.customization?.background || 'bg-green-200';
     const xpPercentage = ((playerState.xp || 0) / ((playerState.level || 1) * 100)) * 100;
+    const isAnyGameActive = isCatchBallActive || isMemoryGameActive;
 
     return (
         <div className={`w-full max-w-sm mx-auto h-[95vh] max-h-[800px] flex flex-col font-sans overflow-hidden ${backgroundClass} rounded-3xl shadow-2xl p-4 border-4 border-amber-300 transition-colors duration-500 relative`}>
@@ -231,11 +248,13 @@ export default function App() {
             </div>
             <div className="grid grid-cols-[20px,1fr] gap-x-2 gap-y-1 items-center mb-4 flex-shrink-0 text-pink-600 relative z-30"><span>❤️</span><StatusBar value={playerState?.stats?.health} colorClass="bg-pink-500" /><span>🍖</span><StatusBar value={playerState?.stats?.hunger} colorClass="bg-orange-500" /><span>🧼</span><StatusBar value={playerState?.stats?.hygiene} colorClass="bg-cyan-500" /><span>🎾</span><StatusBar value={playerState?.stats?.fun} colorClass="bg-yellow-500" /><span>⚡</span><StatusBar value={playerState?.stats?.energy} colorClass="bg-lime-500" /></div>
 
-            {/* LINHA CORRIGIDA ABAIXO */}
             <main ref={mainRef} className="flex-grow relative flex flex-col items-center justify-center my-2 overflow-hidden z-10">
-                <AnimatePresence>{isGameActive && <CatchTheBallGame onFinish={handleGameFinish} />}</AnimatePresence>
+                <AnimatePresence>
+                    {isCatchBallActive && <CatchTheBallGame onFinish={(score) => handleGameFinish(score, 'catch')} />}
+                    {isMemoryGameActive && <MemoryGame onFinish={(score) => handleGameFinish(score, 'memory')} />}
+                </AnimatePresence>
                 {particles.map(particle => <Particle key={particle.id} x={particle.x} y={particle.y} />)}
-                <div className={`relative flex items-center justify-center transition-all duration-300 ${isGameActive ? 'filter blur-sm' : ''}`}>
+                <div className={`relative flex items-center justify-center transition-all duration-300 ${isAnyGameActive ? 'filter blur-sm' : ''}`}>
                     <div ref={julioRef} className={`transition-all duration-300 ${isCleaning ? 'saturate-50' : ''}`}>
                         <JulioCharacter
                             isSleeping={playerState?.isSleeping}
@@ -251,7 +270,7 @@ export default function App() {
                 {isCleaning && julioRect && <CleaningMinigame onFinish={handleEndCleaning} julioRect={julioRect} />}
                 {draggableItem && (<DraggableItem item={draggableItem} onDragEnd={handleItemDrop} constraintsRef={mainRef} />)}
                 {feedback && <InteractionFeedback text={feedback} />}
-                <div className={`absolute bottom-0 text-center mb-4 transition-opacity duration-300 ${isGameActive || isCleaning ? 'opacity-0 pointer-events-none' : ''}`}><p className="text-gray-600 font-semibold bg-white/50 px-3 py-1 rounded-full">{playerState?.isSleeping ? "Julio está a dormir... Zzz" : "Relaxa com o Julio!"}</p></div>
+                <div className={`absolute bottom-0 text-center mb-4 transition-opacity duration-300 ${isAnyGameActive || isCleaning ? 'opacity-0 pointer-events-none' : ''}`}><p className="text-gray-600 font-semibold bg-white/50 px-3 py-1 rounded-full">{playerState?.isSleeping ? "Julio está a dormir... Zzz" : "Relaxa com o Julio!"}</p></div>
                 <AnimatePresence>{activeOverlay && (<Overlay title={activeOverlay} onClose={() => setActiveOverlay(null)}>{renderOverlayContent()}</Overlay>)}</AnimatePresence>
             </main>
 

@@ -1,29 +1,56 @@
-import js from '@eslint/js'
-import globals from 'globals'
-import reactHooks from 'eslint-plugin-react-hooks'
-import reactRefresh from 'eslint-plugin-react-refresh'
-import { defineConfig, globalIgnores } from 'eslint/config'
+// eslint.config.js
+import globals from "globals";
+import pluginJs from "@eslint/js";
+import reactPlugin from "eslint-plugin-react";
+import reactHooksPlugin from "eslint-plugin-react-hooks";
 
-export default defineConfig([
-  globalIgnores(['dist']),
+export default [
+  // Configuração para ignorar pastas
   {
-    files: ['**/*.{js,jsx}'],
-    extends: [
-      js.configs.recommended,
-      reactHooks.configs['recommended-latest'],
-      reactRefresh.configs.vite,
-    ],
+    ignores: ["node_modules/", "dist/", "functions/node_modules/"],
+  },
+
+  // Configuração para o código React (pasta src/)
+  {
+    files: ["src/**/*.{js,jsx}"],
+    plugins: {
+      react: reactPlugin,
+      "react-hooks": reactHooksPlugin,
+    },
     languageOptions: {
-      ecmaVersion: 2020,
-      globals: globals.browser,
       parserOptions: {
-        ecmaVersion: 'latest',
         ecmaFeatures: { jsx: true },
-        sourceType: 'module',
+      },
+      globals: {
+        ...globals.browser,
       },
     },
     rules: {
-      'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]' }],
+      ...pluginJs.configs.recommended.rules,
+      ...reactPlugin.configs.recommended.rules,
+      ...reactHooksPlugin.configs.recommended.rules,
+      "react/react-in-jsx-scope": "off", // Regra desnecessária com Vite/React 17+
+      "react/prop-types": "off", // Desativa a verificação de prop-types por agora
+    },
+    settings: {
+      react: {
+        version: "detect",
+      },
     },
   },
-])
+
+  // Configuração específica para o código do servidor (pasta functions/)
+  {
+    files: ["functions/**/*.js"],
+    languageOptions: {
+      globals: {
+        ...globals.node, // Habilita globais do Node.js como 'require', 'module', 'exports'
+      },
+    },
+    rules: {
+      ...pluginJs.configs.recommended.rules,
+      "no-undef": "error",
+      "quotes": ["error", "double"],
+    },
+  },
+];

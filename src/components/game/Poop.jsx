@@ -1,4 +1,3 @@
-// src/components/game/Poop.jsx
 import React from 'react';
 import { motion } from 'framer-motion';
 

@@ -5,10 +5,9 @@ import { updateDoc, doc, getFirestore, arrayUnion, arrayRemove } from 'firebase/
 import { motion, AnimatePresence } from 'framer-motion';
 
 // Importações de Dados, Hooks e Utilitários
-import { firebaseConfig, stripePublicKey } from './data/gameData';
+import { firebaseConfig } from './data/gameData';
 import { usePlayerStateWithPoop } from './hooks/usePlayerState';
 import { soundManager, gameItems } from './data/gameData';
-import { throttle } from './utils/throttle';
 
 // Importações de Componentes de UI
 import NavIcon from './components/ui/NavIcon';
@@ -29,6 +28,7 @@ import Shop from './components/screens/Shop';
 import Bedroom from './components/screens/Bedroom';
 import Playroom from './components/screens/Playroom';
 import RoomComponent from './components/screens/RoomComponent';
+
 
 export default function App() {
     const [userId, setUserId] = useState(null);
@@ -66,7 +66,15 @@ export default function App() {
     const handleSleep = useCallback(() => { if (!playerState) return; updatePlayerState({ isSleeping: !playerState.isSleeping }); }, [playerState, updatePlayerState]);
     const handleBuyCoins = useCallback(async (priceId) => { /* ...código idêntico... */ }, []);
     
-    const handleCleanPoop = (poopId) => { soundManager.playSound('clean'); const poopToRemove = playerState.poops.find(p => p.id === poopId); if (poopToRemove) { updatePlayerState({ poops: arrayRemove(poopToRemove) }); handleAction('hygiene', 15); } };
+    const handleCleanPoop = (poopId) => {
+        soundManager.playSound('clean');
+        const poopToRemove = playerState.poops.find(p => p.id === poopId);
+        if (poopToRemove) {
+            updatePlayerState({ poops: arrayRemove(poopToRemove) });
+            handleAction('hygiene', 15);
+        }
+    };
+    
     const handleUseItem = (itemId) => {
         const item = gameItems[itemId]; if (!item) return; const currentAmount = playerState.inventory[itemId] || 0;
         if (currentAmount <= 0) { showFeedback(`Não tem mais ${item.name}!`); return; }
@@ -74,11 +82,19 @@ export default function App() {
         else { setDraggableItem({ id: itemId, icon: item.icon }); setActiveOverlay(null); }
     };
     const handleEndCleaning = () => { const soapEffect = gameItems.sabonete.effect; handleAction(soapEffect.stat, soapEffect.value); showFeedback(gameItems.sabonete.feedback); setIsCleaning(false); };
-    const handleItemDrop = (info, item) => { /* ...código idêntico... */ };
+    const handleItemDrop = (info, item) => {
+        const julioRectTarget = julioRef.current.getBoundingClientRect(); const draggedPoint = { x: info.point.x, y: info.point.y };
+        if (draggedPoint.x > julioRectTarget.left && draggedPoint.x < julioRectTarget.right && draggedPoint.y > julioRectTarget.top && draggedPoint.y < julioRectTarget.bottom) {
+            const itemData = gameItems[item.id]; handleAction(itemData.effect.stat, itemData.effect.value);
+            if (itemData.type === 'food') soundManager.playSound('eat');
+            const currentAmount = playerState.inventory[item.id]; updatePlayerState({ [`inventory.${item.id}`]: currentAmount - 1 }); showFeedback(itemData.feedback);
+        }
+        setDraggableItem(null);
+    };
     const handleGameFinish = (score) => { const coinsEarned = score * 2; if (coinsEarned > 0) showFeedback(`+${coinsEarned} moedas!`); updatePlayerState({ coins: playerState.coins + coinsEarned, }); setIsGameActive(false); };
     const handlePettingEnd = useCallback(() => { setIsPetting(false); clearInterval(pettingIntervalRef.current); window.removeEventListener('mouseup', handlePettingEnd); }, []);
-    const handlePettingStart = (event) => { /* ...código idêntico... */ };
-    const handlePettingMove = (event) => { /* ...código idêntico... */ };
+    const handlePettingStart = (event) => { if (isCleaning || isGameActive || draggableItem || playerState.isSleeping) return; event.preventDefault(); setIsPetting(true); soundManager.playSound('pet'); clearInterval(pettingIntervalRef.current); pettingIntervalRef.current = setInterval(() => { handleAction('fun', 2); }, 700); window.addEventListener('mouseup', handlePettingEnd, { once: true }); };
+    const handlePettingMove = (event) => { if (!isPetting) return; const mainRect = mainRef.current.getBoundingClientRect(); const newParticle = { id: Date.now(), x: event.pageX - mainRect.left, y: event.pageY - mainRect.top }; setParticles(prev => [...prev, newParticle]); setTimeout(() => { setParticles(current => current.filter(p => p.id !== newParticle.id)); }, 1000); };
     
     const NavButton = ({ type, onClick }) => (<button onClick={onClick} className="bg-amber-100/80 p-3 rounded-lg shadow-md text-amber-800 hover:bg-amber-200/80 transition-colors flex items-center justify-center"><NavIcon type={type} /></button>);
     const renderOverlayContent = () => {
@@ -106,7 +122,11 @@ export default function App() {
                 <div className={`relative flex items-center justify-center transition-all duration-300 ${isGameActive ? 'filter blur-sm' : ''}`}>
                     <div ref={julioRef} className={`transition-all duration-300 ${isCleaning ? 'saturate-50' : ''}`}><JulioCharacter isSleeping={playerState?.isSleeping} status={playerState?.stats} isPetting={isPetting} onPetStart={handlePettingStart} onPetMove={handlePettingMove} /></div>
                 </div>
-                <AnimatePresence>{playerState.poops?.map(p => <Poop key={p.id} poop={p} onClick={handleCleanPoop} />)}</AnimatePresence>
+                
+                <AnimatePresence>
+                    {playerState.poops?.map(p => <Poop key={p.id} poop={p} onClick={handleCleanPoop} />)}
+                </AnimatePresence>
+                
                 {isCleaning && julioRect && <CleaningMinigame onFinish={handleEndCleaning} julioRect={julioRect} />}
                 {draggableItem && ( <DraggableItem item={draggableItem} onDragEnd={handleItemDrop} constraintsRef={mainRef} /> )}
                 {feedback && <InteractionFeedback text={feedback} />}

@@ -1,53 +1,70 @@
-const functions = require("firebase-functions");
+// functions/index.js
+const {onRequest} = require("firebase-functions/v2/https");
+const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
-const Stripe = require("stripe");
+const express = require("express");
+// Use secrets stored as environment variables for 2nd Gen functions
+const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 
-// Inicialize os serviços apenas uma vez
 admin.initializeApp();
-const stripe = new Stripe(functions.config().stripe.secret, {
-  apiVersion: "2023-10-16",
-});
 
-exports.stripeWebhook = functions.https.onRequest(async (req, res) => {
+const app = express();
+
+// Stripe requires the raw request body to verify webhook signatures.
+// We use express.raw() instead of express.json() for this specific endpoint.
+app.post("/", express.raw({type: "application/json"}), async (req, res) => {
+  const signature = req.headers["stripe-signature"];
   let event;
-  const webhookSecret = functions.config().stripe.webhook_secret;
 
   try {
-    event = stripe.webhooks.constructEvent(
-      req.rawBody,
-      req.headers["stripe-signature"],
-      webhookSecret
-    );
+    // Use the environment variable for the webhook secret.
+    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+    if (!webhookSecret) {
+        logger.error("Stripe webhook secret is not set.");
+        return res.sendStatus(400);
+    }
+    // req.body contains the raw buffer from express.raw()
+    event = stripe.webhooks.constructEvent(req.body, signature, webhookSecret);
   } catch (err) {
-    console.error("⚠️ Webhook signature verification failed.", err.message);
-    return res.status(400).send(`Webhook Error: ${err.message}`);
+    logger.error("Webhook signature verification failed.", {
+        error: err.message,
+    });
+    return res.sendStatus(400);
   }
 
-  // Handle the checkout.session.completed event
-  if (event.type === "checkout.session.completed") {
-    const session = event.data.object;
-    const { userId, coinAmount } = session.metadata;
+  // Handle the event
+  switch (event.type) {
+    case "checkout.session.completed": {
+      const session = event.data.object;
+      const userId = session.client_reference_id;
+      const coins = session.metadata.coins;
 
-    if (!userId || !coinAmount) {
-      console.error("❌ Metadata (userId or coinAmount) missing in session:", session.id);
-      return res.status(400).send("Error: Missing required metadata.");
+      if (!userId || !coins) {
+        logger.error("Missing userId or coins in session metadata", {session});
+        return res.status(400).send("Missing required session data.");
+      }
+
+      // Fulfill the purchase
+      try {
+        const userRef = admin.firestore().collection("users").doc(userId);
+        await userRef.update({
+          coins: admin.firestore.FieldValue.increment(parseInt(coins, 10)),
+        });
+        logger.info(`Successfully granted ${coins} coins to user ${userId}`);
+      } catch (error) {
+        logger.error(`Error updating coins for user ${userId}:`, error);
+        return res.status(500).send("Error fulfilling purchase.");
+      }
+      break;
     }
-
-    const playerDocRef = admin.firestore().collection("players").doc(userId);
-
-    try {
-      await playerDocRef.update({
-        coins: admin.firestore.FieldValue.increment(parseInt(coinAmount, 10)),
-      });
-
-      console.log(`✅ Successfully credited ${coinAmount} coins to user ${userId}`);
-      res.status(200).json({ received: true, message: "Coins credited." });
-
-    } catch (error) {
-      console.error(`🔥 Failed to update coins for user ${userId}:`, error);
-      res.status(500).send("Internal Server Error: Could not update player data.");
-    }
-  } else {
-    res.status(200).send({ received: true, message: `Unhandled event type: ${event.type}` });
+    default:
+      logger.warn(`Unhandled event type ${event.type}`);
   }
+
+  // Return a 200 response to acknowledge receipt of the event
+  res.status(200).json({received: true});
 });
+
+// Expose the Express app as a single Cloud Function.
+// Any request to the 'stripeWebhook' function will be handled by our app.
+exports.stripeWebhook = onRequest(app);

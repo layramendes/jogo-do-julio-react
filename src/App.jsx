@@ -176,7 +176,7 @@ export default function App() {
             </div>
             <div className="grid grid-cols-[20px,1fr] gap-x-2 gap-y-1 items-center mb-4 flex-shrink-0 text-pink-600"><span>❤️</span><StatusBar value={playerState?.stats?.health} colorClass="bg-pink-500" /><span>🍖</span><StatusBar value={playerState?.stats?.hunger} colorClass="bg-orange-500" /><span>🧼</span><StatusBar value={playerState?.stats?.hygiene} colorClass="bg-cyan-500" /><span>🎾</span><StatusBar value={playerState?.stats?.fun} colorClass="bg-yellow-500" /><span>⚡</span><StatusBar value={playerState?.stats?.energy} colorClass="bg-lime-500" /></div>
             
-            <main ref={mainRef} className="flex-grow relative flex flex-col items-center justify-center my-2 overflow-hidden">
+            <main ref={mainRef} className="flex-grow relative flex flex-col items-center justify-center my-2 overflow-hidden z-10">
                 <AnimatePresence>{isGameActive && <CatchTheBallGame onFinish={handleGameFinish} />}</AnimatePresence>
                 {particles.map(particle => <Particle key={particle.id} x={particle.x} y={particle.y} />)}
                 <div className={`relative flex items-center justify-center transition-all duration-300 ${isGameActive ? 'filter blur-sm' : ''}`}>
